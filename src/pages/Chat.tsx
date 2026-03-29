@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
@@ -9,7 +9,7 @@ import {
 import { 
   ChevronLeft, Phone, Video, Camera, Mic, Smile, Send, 
   Reply, Edit2, Trash2, Globe, AlertTriangle, X, Info,
-  Circle, CheckCircle, CheckCircle2, AlertCircle
+  Circle, CheckCircle, CheckCircle2, AlertCircle, BadgeCheck
 } from 'lucide-react';
 import { format, isToday, isYesterday, formatDistanceToNowStrict } from 'date-fns';
 import { toast } from 'sonner';
@@ -37,6 +37,7 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTypedRef = useRef<number>(0);
 
   const { userData } = useAuth();
   const isBlocked = userData?.blockedUsers?.includes(otherUser?.id);
@@ -190,20 +191,27 @@ export default function Chat() {
 
     try {
       if (e.target.value.trim() !== '') {
-        await updateDoc(doc(db, 'chats', chatId), {
-          typing: arrayUnion(currentUser.uid)
-        });
+        const now = Date.now();
+        if (now - lastTypedRef.current > 2000) {
+          lastTypedRef.current = now;
+          await updateDoc(doc(db, 'chats', chatId), {
+            typing: arrayUnion(currentUser.uid)
+          });
+        }
         
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = setTimeout(async () => {
           await updateDoc(doc(db, 'chats', chatId), {
             typing: arrayRemove(currentUser.uid)
           });
+          lastTypedRef.current = 0;
         }, 3000);
       } else {
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         await updateDoc(doc(db, 'chats', chatId), {
           typing: arrayRemove(currentUser.uid)
         });
+        lastTypedRef.current = 0;
       }
     } catch (error) {
       console.error('Error updating typing status:', error);
@@ -225,6 +233,8 @@ export default function Chat() {
     
     try {
       // Clear typing indicator
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      lastTypedRef.current = 0;
       await updateDoc(doc(db, 'chats', chatId), {
         typing: arrayRemove(currentUser.uid)
       });
@@ -433,9 +443,18 @@ export default function Chat() {
             className="flex flex-col min-w-0 cursor-pointer"
             onClick={() => navigate(`/app/user/${otherUser?.id}`)}
           >
-            <span className="text-[15px] font-semibold text-[#262626] truncate">{otherUser?.fullName}</span>
+            <span className="text-[15px] font-semibold text-[#262626] truncate flex items-center">
+              {otherUser?.fullName}
+              {otherUser?.isVerified && (
+                <BadgeCheck size={14} className="text-[#0095F6] ml-1 shrink-0" fill="#0095F6" color="white" />
+              )}
+            </span>
             <span className="text-[12px] text-[#8E8E8E] truncate">
-              {otherUser?.isOnline ? 'Active now' : formatLastSeen(otherUser?.lastSeen)}
+              {isTyping ? (
+                <span className="text-[#0095F6] font-medium italic animate-pulse">typing...</span>
+              ) : (
+                otherUser?.isOnline ? 'Active now' : formatLastSeen(otherUser?.lastSeen)
+              )}
             </span>
           </div>
         </div>
@@ -616,7 +635,12 @@ export default function Chat() {
       </div>
 
       {/* Input Bar */}
-      <div className="p-2 shrink-0 bg-white">
+      <div className="p-2 shrink-0 bg-white flex flex-col">
+        {isTyping && (
+          <div className="px-2 pb-1 text-[12px] text-[#8E8E8E] italic animate-pulse">
+            {otherUser?.fullName?.split(' ')[0]} is typing...
+          </div>
+        )}
         {isBlocked ? (
           <div className="flex items-center justify-center p-4 bg-[#EFEFEF] rounded-lg">
             <p className="text-[14px] text-[#8E8E8E] font-medium">You have blocked this user.</p>

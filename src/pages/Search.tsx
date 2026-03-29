@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
 import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
-import { Search as SearchIcon, X, UserSearch } from 'lucide-react';
+import { Search as SearchIcon, X, UserSearch, BadgeCheck } from 'lucide-react';
 import { handleFirestoreError, OperationType } from '../utils/firestoreErrorHandler';
 
 export default function Search() {
@@ -116,7 +116,12 @@ export default function Search() {
                   )}
                 </div>
                 <div className="ml-3 flex-1">
-                  <p className="text-[14px] font-semibold text-[#262626]">{user.fullName}</p>
+                  <p className="text-[14px] font-semibold text-[#262626] flex items-center">
+                    {user.fullName}
+                    {user.isVerified && (
+                      <BadgeCheck size={14} className="text-[#0095F6] ml-1 shrink-0" fill="#0095F6" color="white" />
+                    )}
+                  </p>
                   <p className="text-[13px] text-[#8E8E8E]">{user.username}</p>
                 </div>
               </div>

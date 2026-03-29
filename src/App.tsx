@@ -19,6 +19,7 @@ import Notifications from './pages/Notifications';
 import Privacy from './pages/Privacy';
 import BlockedUsers from './pages/BlockedUsers';
 import Chat from './pages/Chat';
+import AdminVerification from './pages/AdminVerification';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { currentUser, loading } = useAuth();
@@ -45,6 +46,7 @@ export default function App() {
               <Route path="notifications" element={<Notifications />} />
               <Route path="privacy" element={<Privacy />} />
               <Route path="blocked" element={<BlockedUsers />} />
+              <Route path="admin/verification" element={<AdminVerification />} />
             </Route>
             
             <Route path="/chat/:chatId" element={<ProtectedRoute><Chat /></ProtectedRoute>} />

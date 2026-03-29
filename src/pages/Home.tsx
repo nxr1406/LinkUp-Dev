@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
 import { collection, query, where, onSnapshot, limit, getDoc, doc, deleteDoc } from 'firebase/firestore';
-import { Video, Edit, MessageCircle } from 'lucide-react';
+import { Video, Edit, MessageCircle, BadgeCheck } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { handleFirestoreError, OperationType } from '../utils/firestoreErrorHandler';
 
@@ -73,7 +73,7 @@ export default function Home() {
         };
       }));
       
-      chatsData.sort((a, b) => {
+      chatsData.sort((a: any, b: any) => {
         const timeA = a.lastMessageTime?.toMillis?.() || 0;
         const timeB = b.lastMessageTime?.toMillis?.() || 0;
         return timeB - timeA;
@@ -177,8 +177,11 @@ export default function Home() {
                     )}
                   </div>
                   <div className="ml-3 flex-1 min-w-0">
-                    <p className={`text-[14px] truncate ${isUnread ? 'font-semibold text-[#262626]' : 'text-[#262626]'}`}>
+                    <p className={`text-[14px] truncate flex items-center ${isUnread ? 'font-semibold text-[#262626]' : 'text-[#262626]'}`}>
                       {chat.otherUser?.fullName || 'Unknown User'}
+                      {chat.otherUser?.isVerified && (
+                        <BadgeCheck size={14} className="text-[#0095F6] ml-1 shrink-0" fill="#0095F6" color="white" />
+                      )}
                     </p>
                     <div className="flex items-center text-[13px]">
                       <span className={`truncate ${isUnread ? 'font-semibold text-[#262626]' : 'text-[#8E8E8E]'}`}>

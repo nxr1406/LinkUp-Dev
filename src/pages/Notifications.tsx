@@ -46,7 +46,7 @@ export default function Notifications() {
       }));
       
       // Sort in memory to avoid requiring a composite index
-      notifsData.sort((a, b) => {
+      notifsData.sort((a: any, b: any) => {
         const timeA = a.createdAt?.toMillis?.() || 0;
         const timeB = b.createdAt?.toMillis?.() || 0;
         return timeB - timeA;

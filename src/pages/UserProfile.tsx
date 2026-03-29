@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
-import { ChevronLeft, MoreHorizontal, UserPlus, UserCheck, Ban } from 'lucide-react';
+import { ChevronLeft, MoreHorizontal, UserPlus, UserCheck, Ban, BadgeCheck } from 'lucide-react';
 import { clsx } from 'clsx';
 import { handleFirestoreError, OperationType } from '../utils/firestoreErrorHandler';
 import { toast } from 'sonner';
@@ -216,8 +216,18 @@ export default function UserProfile() {
               )}
             </div>
             
-            <h2 className="text-[22px] font-bold text-[#262626] mt-4">{profileUser.fullName}</h2>
-            <p className="text-[15px] text-[#8E8E8E]">@{profileUser.username}</p>
+            <h2 className="text-[22px] font-bold text-[#262626] mt-4 flex items-center">
+              {profileUser.fullName}
+              {profileUser.isVerified && (
+                <BadgeCheck size={20} className="text-[#0095F6] ml-1" fill="#0095F6" color="white" />
+              )}
+            </h2>
+            <p className="text-[15px] text-[#8E8E8E] flex items-center">
+              @{profileUser.username}
+              {profileUser.isVerified && (
+                <BadgeCheck size={14} className="text-[#0095F6] ml-1" fill="#0095F6" color="white" />
+              )}
+            </p>
             
             {profileUser.bio && (
               <p className="text-[15px] text-[#262626] text-center mt-3 px-8 whitespace-pre-wrap leading-relaxed">

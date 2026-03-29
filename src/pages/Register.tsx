@@ -52,11 +52,11 @@ export default function Register() {
           setIsUsernameValid(true);
         }
       } catch (error: any) {
-        console.error("Error checking username:", error);
         if (error.code === 'permission-denied' || error.message?.includes('permission')) {
           setUsernameError('');
           setIsUsernameValid(true);
         } else {
+          console.error("Error checking username:", error);
           setUsernameError('Error checking username');
           setIsUsernameValid(false);
         }
@@ -138,7 +138,10 @@ export default function Register() {
         bio: '',
         isOnline: true,
         lastSeen: serverTimestamp(),
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        isVerified: false,
+        verificationStatus: 'none',
+        role: 'user'
       });
 
       navigate('/app');
@@ -226,7 +229,7 @@ export default function Register() {
                 type="text"
                 placeholder="Username"
                 value={username}
-                onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
                 className="w-full h-11 bg-[#FAFAFA] border border-[#DBDBDB] rounded-md px-3 text-[14px] focus:outline-none focus:border-[#8E8E8E]"
               />
               {username.length > 0 && (
