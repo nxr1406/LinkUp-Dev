@@ -15,6 +15,9 @@ import { format, isToday, isYesterday, formatDistanceToNowStrict } from 'date-fn
 import { toast } from 'sonner';
 import { clsx } from 'clsx';
 import { handleFirestoreError, OperationType } from '../utils/firestoreErrorHandler';
+import data from '@emoji-mart/data';
+import Picker from '@emoji-mart/react';
+import { AppleEmojiText } from '../components/AppleEmojiText';
 
 export default function Chat() {
   const { chatId } = useParams();
@@ -29,10 +32,14 @@ export default function Chat() {
   const [selectedMessage, setSelectedMessage] = useState<any>(null);
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [showChatSettings, setShowChatSettings] = useState(false);
+  const [showNicknameModal, setShowNicknameModal] = useState(false);
+  const [nicknameInput, setNicknameInput] = useState('');
+  const [chatData, setChatData] = useState<any>(null);
   const [translating, setTranslating] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [replyingTo, setReplyingTo] = useState<any | null>(null);
   const [failedMessages, setFailedMessages] = useState<any[]>([]);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -91,26 +98,6 @@ export default function Chat() {
     let userUnsub: any;
     fetchChat().then(unsub => { userUnsub = unsub; });
 
-    // Cleanup expired messages for this chat
-    const cleanupMessages = async () => {
-      try {
-        const msgsQ = query(
-          collection(db, `messages/${chatId}/msgs`),
-          where('expiresAt', '<=', new Date()),
-          where('senderId', '==', currentUser.uid)
-        );
-        const msgsSnap = await getDocs(msgsQ);
-        if (!msgsSnap.empty) {
-          const batch = writeBatch(db);
-          msgsSnap.docs.forEach(msg => batch.delete(msg.ref));
-          await batch.commit();
-        }
-      } catch (e) {
-        console.error('Cleanup failed', e);
-      }
-    };
-    cleanupMessages();
-
     // Mark messages as read
     const markAsRead = async () => {
       try {
@@ -123,10 +110,11 @@ export default function Chat() {
     };
     markAsRead();
 
-    // Listen to chat doc for typing indicator
+    // Listen to chat doc for typing indicator and nicknames
     const chatUnsubscribe = onSnapshot(doc(db, 'chats', chatId), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
+        setChatData(data);
         if (data.typing && otherUser?.id) {
           setIsTyping(data.typing.includes(otherUser.id));
         } else {
@@ -134,7 +122,7 @@ export default function Chat() {
         }
       }
     }, (error) => {
-      console.error('Error listening to chat typing indicator:', error);
+      console.error('Error listening to chat updates:', error);
     });
 
     // Fetch messages
@@ -239,15 +227,11 @@ export default function Chat() {
         typing: arrayRemove(currentUser.uid)
       });
 
-      const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + 24);
-
       await addDoc(collection(db, `messages/${chatId}/msgs`), {
         senderId: currentUser.uid,
         content: text,
         type: 'text',
         createdAt: serverTimestamp(),
-        expiresAt,
         isDeleted: false,
         editedAt: null,
         reactions: {},
@@ -337,6 +321,14 @@ export default function Chat() {
       content: 'This message was unsent'
     });
     
+    // If this was the last message, update the chat's lastMessage
+    const isLastMessage = messages.length > 0 && messages[messages.length - 1].id === selectedMessage.id;
+    if (isLastMessage) {
+      await updateDoc(doc(db, 'chats', chatId), {
+        lastMessage: 'This message was unsent'
+      });
+    }
+    
     setShowActionSheet(false);
     setSelectedMessage(null);
   };
@@ -394,6 +386,20 @@ export default function Chat() {
     }
   };
 
+  const handleSetNickname = async () => {
+    if (!chatId || !otherUser) return;
+    try {
+      await updateDoc(doc(db, 'chats', chatId), {
+        [`nicknames.${otherUser.id}`]: nicknameInput.trim() || null
+      });
+      setShowNicknameModal(false);
+      toast.success('Nickname updated');
+    } catch (error) {
+      console.error('Error setting nickname:', error);
+      toast.error('Failed to set nickname');
+    }
+  };
+
   const formatLastSeen = (timestamp: any) => {
     if (!timestamp) return '';
     const date = timestamp.toDate();
@@ -427,16 +433,18 @@ export default function Chat() {
           <button onClick={() => navigate('/app')} className="mr-2 -ml-2 p-2">
             <ChevronLeft size={28} className="text-[#262626]" strokeWidth={1.5} />
           </button>
-          <div 
-            className="w-8 h-8 rounded-full bg-[#DBDBDB] overflow-hidden shrink-0 mr-3 cursor-pointer"
-            onClick={() => navigate(`/app/user/${otherUser?.id}`)}
-          >
-            {otherUser?.avatarUrl ? (
-              <img src={otherUser.avatarUrl} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-white text-[14px] font-semibold">
-                {otherUser?.fullName?.[0]?.toUpperCase()}
-              </div>
+          <div className="relative shrink-0 mr-3 cursor-pointer" onClick={() => navigate(`/app/user/${otherUser?.id}`)}>
+            <div className="w-8 h-8 rounded-full bg-[#DBDBDB] overflow-hidden">
+              {otherUser?.avatarUrl ? (
+                <img src={otherUser.avatarUrl} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white text-[14px] font-semibold">
+                  {otherUser?.fullName?.[0]?.toUpperCase()}
+                </div>
+              )}
+            </div>
+            {otherUser?.isOnline && (
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[#0095F6] rounded-full border-2 border-white"></div>
             )}
           </div>
           <div 
@@ -444,12 +452,12 @@ export default function Chat() {
             onClick={() => navigate(`/app/user/${otherUser?.id}`)}
           >
             <span className="text-[15px] font-semibold text-[#262626] truncate flex items-center">
-              {otherUser?.fullName}
+              <AppleEmojiText text={chatData?.nicknames?.[otherUser?.id] || otherUser?.fullName || ''} />
               {otherUser?.isVerified && (
                 <BadgeCheck size={14} className="text-[#0095F6] ml-1 shrink-0" fill="#0095F6" color="white" />
               )}
             </span>
-            <span className="text-[12px] text-[#8E8E8E] truncate">
+            <span className="text-[12px] text-[#8E8E8E] truncate flex items-center">
               {isTyping ? (
                 <span className="text-[#0095F6] font-medium italic animate-pulse">typing...</span>
               ) : (
@@ -557,14 +565,17 @@ export default function Chat() {
                         "flex flex-col mb-2 p-2 rounded-[12px] border-l-4",
                         isMine ? "bg-white/20 border-white/50" : "bg-black/5 border-black/20"
                       )}>
-                        <span className="text-[11px] font-semibold opacity-80">
-                          {msg.replyToSenderId === currentUser?.uid ? 'You' : otherUser?.fullName || 'User'}
+                        <span className="text-[11px] font-semibold opacity-80 flex items-center">
+                          {msg.replyToSenderId === currentUser?.uid ? 'You' : <AppleEmojiText text={otherUser?.fullName || 'User'} />}
+                          {msg.replyToSenderId !== currentUser?.uid && otherUser?.isVerified && (
+                            <BadgeCheck size={10} className="text-[#0095F6] ml-0.5 shrink-0" fill="#0095F6" color="white" />
+                          )}
                         </span>
-                        <span className="text-[13px] opacity-90 truncate">{msg.replyToText}</span>
+                        <span className="text-[13px] opacity-90 truncate"><AppleEmojiText text={msg.replyToText} /></span>
                       </div>
                     )}
                     
-                    {msg.content}
+                    <AppleEmojiText text={msg.content} />
                     
                     {/* Reactions */}
                     {reactionEntries.length > 0 && (
@@ -574,7 +585,7 @@ export default function Chat() {
                       )}>
                         {reactionEntries.map(([emoji, count]) => (
                           <div key={emoji} className="flex items-center space-x-1">
-                            <span className="text-[12px]">{emoji}</span>
+                            <span className="text-[12px]"><AppleEmojiText text={emoji} /></span>
                             {count > 1 && <span className="text-[10px] text-[#8E8E8E] font-semibold">{count}</span>}
                           </div>
                         ))}
@@ -614,7 +625,7 @@ export default function Chat() {
           );
         })}
         {isTyping && (
-          <div className="flex items-center px-4 py-2">
+          <div className="flex items-center py-2">
             <div className="w-8 h-8 rounded-full bg-[#DBDBDB] overflow-hidden mr-2 shrink-0">
               {otherUser?.avatarUrl ? (
                 <img src={otherUser.avatarUrl} alt="" className="w-full h-full object-cover" />
@@ -637,8 +648,10 @@ export default function Chat() {
       {/* Input Bar */}
       <div className="p-2 shrink-0 bg-white flex flex-col">
         {isTyping && (
-          <div className="px-2 pb-1 text-[12px] text-[#8E8E8E] italic animate-pulse">
-            {otherUser?.fullName?.split(' ')[0]} is typing...
+          <div className="px-2 pb-1 text-[12px] text-[#8E8E8E] italic animate-pulse flex items-center">
+            {otherUser?.fullName?.split(' ')[0]}
+            {otherUser?.isVerified && <BadgeCheck size={10} className="text-[#0095F6] ml-0.5 mr-1 shrink-0" fill="#0095F6" color="white" />}
+            {' '}is typing...
           </div>
         )}
         {isBlocked ? (
@@ -650,14 +663,17 @@ export default function Chat() {
             <p className="text-[14px] text-[#8E8E8E] font-medium">You cannot reply to this conversation.</p>
           </div>
         ) : (
-          <div className="flex flex-col">
+          <div className="flex flex-col relative">
             {replyingTo && (
               <div className="flex items-center justify-between bg-[#F5F5F5] px-4 py-2 border-l-4 border-[#0095F6] rounded-t-[12px] mx-1 mb-1">
                 <div className="flex flex-col flex-1 min-w-0">
-                  <span className="text-[12px] font-semibold text-[#0095F6]">
-                    Replying to {replyingTo.senderId === currentUser?.uid ? 'yourself' : otherUser?.fullName || 'user'}
+                  <span className="text-[12px] font-semibold text-[#0095F6] flex items-center">
+                    Replying to {replyingTo.senderId === currentUser?.uid ? 'yourself' : <AppleEmojiText text={otherUser?.fullName || 'user'} />}
+                    {replyingTo.senderId !== currentUser?.uid && otherUser?.isVerified && (
+                      <BadgeCheck size={10} className="text-[#0095F6] ml-0.5 shrink-0" fill="#0095F6" color="white" />
+                    )}
                   </span>
-                  <span className="text-[13px] text-[#8E8E8E] truncate">{replyingTo.content}</span>
+                  <span className="text-[13px] text-[#8E8E8E] truncate"><AppleEmojiText text={replyingTo.content} /></span>
                 </div>
                 <button onClick={() => setReplyingTo(null)} className="p-1 ml-2">
                   <X size={18} className="text-[#8E8E8E]" />
@@ -686,14 +702,38 @@ export default function Chat() {
               {!inputText ? (
                 <div className="flex items-center">
                   <button className="p-2"><Mic size={24} className="text-[#262626]" strokeWidth={1.5} /></button>
-                  <button className="p-2"><Smile size={24} className="text-[#262626]" strokeWidth={1.5} /></button>
+                  <button className="p-2" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
+                    <Smile size={24} className="text-[#262626]" strokeWidth={1.5} />
+                  </button>
                 </div>
               ) : (
-                <button onClick={handleSend} className="p-2 mr-1">
-                  <Send size={24} className="text-[#0095F6]" strokeWidth={2} />
-                </button>
+                <div className="flex items-center">
+                  <button className="p-2 mr-1" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
+                    <Smile size={24} className="text-[#262626]" strokeWidth={1.5} />
+                  </button>
+                  <button onClick={handleSend} className="p-2 mr-1">
+                    <Send size={24} className="text-[#0095F6]" strokeWidth={2} />
+                  </button>
+                </div>
               )}
             </div>
+            
+            {showEmojiPicker && (
+              <div className="absolute bottom-[70px] right-2 z-50 shadow-lg rounded-lg overflow-hidden">
+                <Picker 
+                  data={data} 
+                  set="apple" 
+                  onEmojiSelect={(emoji: any) => {
+                    setInputText(prev => prev + emoji.native);
+                    // Optional: keep picker open or close it
+                    // setShowEmojiPicker(false);
+                  }} 
+                  theme="light"
+                  previewPosition="none"
+                  skinTonePosition="none"
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -775,6 +815,16 @@ export default function Chat() {
             </div>
             <div className="flex flex-col pb-8">
               <button 
+                onClick={() => {
+                  setNicknameInput(chatData?.nicknames?.[otherUser?.id] || '');
+                  setShowChatSettings(false);
+                  setShowNicknameModal(true);
+                }}
+                className="w-full py-4 text-[15px] text-[#262626] font-semibold active:bg-gray-50 border-b border-[#DBDBDB]"
+              >
+                Set Nickname
+              </button>
+              <button 
                 onClick={handleDeleteChat}
                 className="w-full py-4 text-[15px] text-[#ED4956] font-semibold active:bg-gray-50 border-b border-[#DBDBDB]"
               >
@@ -786,6 +836,42 @@ export default function Chat() {
               >
                 Cancel
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Nickname Modal */}
+      {showNicknameModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setShowNicknameModal(false)}>
+          <div 
+            className="bg-white rounded-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <h3 className="text-[18px] font-semibold text-center mb-4">Set Nickname</h3>
+              <input
+                type="text"
+                value={nicknameInput}
+                onChange={(e) => setNicknameInput(e.target.value)}
+                placeholder={otherUser?.fullName}
+                className="w-full bg-[#F5F5F5] border-none rounded-xl px-4 py-3 text-[15px] outline-none mb-6"
+                autoFocus
+              />
+              <div className="flex space-x-3">
+                <button 
+                  onClick={() => setShowNicknameModal(false)}
+                  className="flex-1 py-3 rounded-xl font-semibold text-[#262626] bg-[#F5F5F5]"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleSetNickname}
+                  className="flex-1 py-3 rounded-xl font-semibold text-white bg-[#0095F6]"
+                >
+                  Save
+                </button>
+              </div>
             </div>
           </div>
         </div>

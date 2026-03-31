@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
 import { collection, query, where, onSnapshot, doc, updateDoc, getDoc } from 'firebase/firestore';
-import { ChevronLeft, BellOff } from 'lucide-react';
+import { ChevronLeft, BellOff, BadgeCheck } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { clsx } from 'clsx';
 import { handleFirestoreError, OperationType } from '../utils/firestoreErrorHandler';
@@ -137,10 +137,17 @@ export default function Notifications() {
                   )}
                 </div>
                 <div className="ml-3 flex-1 min-w-0">
-                  <p className="text-[14px] text-[#262626]">
-                    <span className="font-semibold">{notif.fromUser?.username || 'Someone'}</span>
-                    {notif.type === 'follow' && ' started following you.'}
-                    {notif.type === 'reaction' && ` reacted to your message: ${notif.emoji}`}
+                  <p className="text-[14px] text-[#262626] flex items-center flex-wrap">
+                    <span className="font-semibold flex items-center">
+                      {notif.fromUser?.username || 'Someone'}
+                      {notif.fromUser?.isVerified && (
+                        <BadgeCheck size={14} className="text-[#0095F6] ml-1 shrink-0" fill="#0095F6" color="white" />
+                      )}
+                    </span>
+                    <span className="ml-1">
+                      {notif.type === 'follow' && 'started following you.'}
+                      {notif.type === 'reaction' && `reacted to your message: ${notif.emoji}`}
+                    </span>
                     <span className="text-[#8E8E8E] ml-1">{formatTime(notif.createdAt)}</span>
                   </p>
                 </div>

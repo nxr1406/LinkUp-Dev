@@ -44,37 +44,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         
         setLoading(false);
-
-        // Cleanup expired messages (run asynchronously)
-        (async () => {
-          try {
-            const chatsQ = query(collection(db, 'chats'), where('participants', 'array-contains', user.uid));
-            const chatsSnap = await getDocs(chatsQ);
-            const now = new Date();
-            
-            for (const chatDoc of chatsSnap.docs) {
-              const msgsQ = query(
-                collection(db, `messages/${chatDoc.id}/msgs`),
-                where('expiresAt', '<=', now),
-                where('senderId', '==', user.uid)
-              );
-              const msgsSnap = await getDocs(msgsQ);
-              if (!msgsSnap.empty) {
-                const batch = writeBatch(db);
-                msgsSnap.docs.forEach(msg => {
-                  batch.update(msg.ref, {
-                    isDeleted: true,
-                    content: 'This message has expired',
-                    expiresAt: null // Remove expiresAt so it doesn't get queried again
-                  });
-                });
-                await batch.commit();
-              }
-            }
-          } catch (e) {
-            console.error('Cleanup failed', e);
-          }
-        })();
       } else {
         if (userDataUnsubscribe) {
           userDataUnsubscribe();

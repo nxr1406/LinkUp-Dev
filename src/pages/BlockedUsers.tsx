@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, BadgeCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
@@ -92,8 +92,18 @@ export default function BlockedUsers() {
                     )}
                   </div>
                   <div>
-                    <p className="text-[14px] font-semibold text-[#262626]">{user.username}</p>
-                    <p className="text-[14px] text-[#8E8E8E]">{user.fullName}</p>
+                    <p className="text-[14px] font-semibold text-[#262626] flex items-center">
+                      {user.username}
+                      {user.isVerified && (
+                        <BadgeCheck size={14} className="text-[#0095F6] ml-1 shrink-0" fill="#0095F6" color="white" />
+                      )}
+                    </p>
+                    <p className="text-[14px] text-[#8E8E8E] flex items-center">
+                      {user.fullName}
+                      {user.isVerified && (
+                        <BadgeCheck size={12} className="text-[#0095F6] ml-1 shrink-0" fill="#0095F6" color="white" />
+                      )}
+                    </p>
                   </div>
                 </div>
                 <button

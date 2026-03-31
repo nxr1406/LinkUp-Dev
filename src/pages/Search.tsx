@@ -6,6 +6,8 @@ import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'fire
 import { Search as SearchIcon, X, UserSearch, BadgeCheck } from 'lucide-react';
 import { handleFirestoreError, OperationType } from '../utils/firestoreErrorHandler';
 
+import { AppleEmojiText } from '../components/AppleEmojiText';
+
 export default function Search() {
   const { currentUser, userData } = useAuth();
   const navigate = useNavigate();
@@ -37,16 +39,48 @@ export default function Search() {
     if (!currentUser) return;
     setLoading(true);
     try {
-      const q = query(
+      const lowerText = text.toLowerCase();
+      const titleText = text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+
+      const usernameQuery = query(
         collection(db, 'users'),
-        where('username', '>=', text.toLowerCase()),
-        where('username', '<=', text.toLowerCase() + '\uf8ff')
+        where('username', '>=', lowerText),
+        where('username', '<=', lowerText + '\uf8ff')
       );
-      const snapshot = await getDocs(q);
-      const users = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(u => u.id !== currentUser.uid && !userData?.blockedUsers?.includes(u.id));
-      setResults(users);
+
+      const fullNameQueryLower = query(
+        collection(db, 'users'),
+        where('fullName', '>=', lowerText),
+        where('fullName', '<=', lowerText + '\uf8ff')
+      );
+
+      const fullNameQueryTitle = query(
+        collection(db, 'users'),
+        where('fullName', '>=', titleText),
+        where('fullName', '<=', titleText + '\uf8ff')
+      );
+
+      const [usernameSnap, fullNameLowerSnap, fullNameTitleSnap] = await Promise.all([
+        getDocs(usernameQuery),
+        getDocs(fullNameQueryLower),
+        getDocs(fullNameQueryTitle)
+      ]);
+
+      const usersMap = new Map();
+
+      const processSnapshot = (snapshot: any) => {
+        snapshot.docs.forEach((doc: any) => {
+          if (doc.id !== currentUser.uid && !userData?.blockedUsers?.includes(doc.id)) {
+            usersMap.set(doc.id, { id: doc.id, ...doc.data() });
+          }
+        });
+      };
+
+      processSnapshot(usernameSnap);
+      processSnapshot(fullNameLowerSnap);
+      processSnapshot(fullNameTitleSnap);
+
+      setResults(Array.from(usersMap.values()));
     } catch (error) {
       console.error(error);
       handleFirestoreError(error, OperationType.GET, 'users');
@@ -117,12 +151,17 @@ export default function Search() {
                 </div>
                 <div className="ml-3 flex-1">
                   <p className="text-[14px] font-semibold text-[#262626] flex items-center">
-                    {user.fullName}
+                    <AppleEmojiText text={user.fullName || ''} />
                     {user.isVerified && (
                       <BadgeCheck size={14} className="text-[#0095F6] ml-1 shrink-0" fill="#0095F6" color="white" />
                     )}
                   </p>
-                  <p className="text-[13px] text-[#8E8E8E]">{user.username}</p>
+                  <p className="text-[13px] text-[#8E8E8E] flex items-center">
+                    {user.username}
+                    {user.isVerified && (
+                      <BadgeCheck size={12} className="text-[#0095F6] ml-1 shrink-0" fill="#0095F6" color="white" />
+                    )}
+                  </p>
                 </div>
               </div>
             ))}

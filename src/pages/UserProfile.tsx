@@ -8,6 +8,8 @@ import { clsx } from 'clsx';
 import { handleFirestoreError, OperationType } from '../utils/firestoreErrorHandler';
 import { toast } from 'sonner';
 
+import { AppleEmojiText } from '../components/AppleEmojiText';
+
 export default function UserProfile() {
   const { userId } = useParams();
   const { currentUser, userData } = useAuth();
@@ -196,7 +198,12 @@ export default function UserProfile() {
           <button onClick={() => navigate(-1)} className="mr-4">
             <ChevronLeft size={28} className="text-[#262626]" strokeWidth={1.5} />
           </button>
-          <h1 className="text-[16px] font-semibold text-[#262626]">{profileUser.username}</h1>
+          <h1 className="text-[16px] font-semibold text-[#262626] flex items-center">
+            {profileUser.username}
+            {profileUser.isVerified && (
+              <BadgeCheck size={16} className="text-[#0095F6] ml-1 shrink-0" fill="#0095F6" color="white" />
+            )}
+          </h1>
         </div>
         <button onClick={() => setShowMenu(true)}>
           <MoreHorizontal size={24} className="text-[#262626]" strokeWidth={1.5} />
@@ -217,21 +224,16 @@ export default function UserProfile() {
             </div>
             
             <h2 className="text-[22px] font-bold text-[#262626] mt-4 flex items-center">
-              {profileUser.fullName}
+              <AppleEmojiText text={profileUser.fullName || ''} />
               {profileUser.isVerified && (
                 <BadgeCheck size={20} className="text-[#0095F6] ml-1" fill="#0095F6" color="white" />
               )}
             </h2>
-            <p className="text-[15px] text-[#8E8E8E] flex items-center">
-              @{profileUser.username}
-              {profileUser.isVerified && (
-                <BadgeCheck size={14} className="text-[#0095F6] ml-1" fill="#0095F6" color="white" />
-              )}
-            </p>
+            <p className="text-[15px] text-[#8E8E8E]">@{profileUser.username}</p>
             
             {profileUser.bio && (
               <p className="text-[15px] text-[#262626] text-center mt-3 px-8 whitespace-pre-wrap leading-relaxed">
-                {profileUser.bio}
+                <AppleEmojiText text={profileUser.bio} />
               </p>
             )}
             
@@ -293,6 +295,28 @@ export default function UserProfile() {
                 <Ban size={24} className="text-[#ED4956] mr-3" strokeWidth={1.5} />
                 <span className="text-[15px] text-[#ED4956]">{isBlocked ? 'Unblock' : 'Block'}</span>
               </button>
+              {userData?.role === 'admin' && (
+                <button 
+                  onClick={async () => {
+                    if (!currentUser || !userId || userData?.role !== 'admin') return;
+                    try {
+                      const userRef = doc(db, 'users', userId);
+                      const newStatus = !profileUser.isSuspended;
+                      await updateDoc(userRef, { isSuspended: newStatus });
+                      setProfileUser((prev: any) => ({ ...prev, isSuspended: newStatus }));
+                      toast.success(newStatus ? 'User suspended successfully' : 'User unsuspended successfully');
+                      setShowMenu(false);
+                    } catch (error) {
+                      console.error('Error suspending user:', error);
+                      handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+                    }
+                  }}
+                  className="flex items-center px-4 py-4 active:bg-gray-50"
+                >
+                  <Ban size={24} className="text-[#ED4956] mr-3" strokeWidth={1.5} />
+                  <span className="text-[15px] text-[#ED4956]">{profileUser.isSuspended ? 'Unsuspend User' : 'Suspend User'}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -2,11 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { auth, db } from '../firebase';
-import { collection, query, where, getDocs, doc, deleteDoc, updateDoc, setDoc, serverTimestamp, addDoc } from 'firebase/firestore';
-import { Menu, Plus, Bell, Lock, Download, LogOut, Trash2, X, Check, BadgeCheck, ShieldCheck } from 'lucide-react';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
+import { collection, query, where, getDocs, doc, deleteDoc, updateDoc, setDoc, serverTimestamp, addDoc, writeBatch } from 'firebase/firestore';
+import { Menu, Plus, Bell, Lock, Download, LogOut, Trash2, X, Check, BadgeCheck, ShieldCheck, Settings, Database, Key } from 'lucide-react';
 import { toast } from 'sonner';
 import { uploadImageToCatbox } from '../services/catbox';
 import { handleFirestoreError, OperationType } from '../utils/firestoreErrorHandler';
+
+import { AppleEmojiText } from '../components/AppleEmojiText';
 
 export default function Profile() {
   const { currentUser, userData } = useAuth();
@@ -26,6 +29,89 @@ export default function Profile() {
   const [verificationLink, setVerificationLink] = useState('');
   const [verificationCategory, setVerificationCategory] = useState('creator');
   const [submittingVerification, setSubmittingVerification] = useState(false);
+
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  const [showAdminSettings, setShowAdminSettings] = useState(false);
+  const [storageMetrics, setStorageMetrics] = useState({ used: 0, free: 1024, total: 1024 });
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deletingChats, setDeletingChats] = useState(false);
+  const [storageError, setStorageError] = useState('');
+
+  const fetchStorageMetrics = async () => {
+    try {
+      setStorageError('');
+      let totalBytes = 0;
+      
+      const chatsSnap = await getDocs(collection(db, 'chats'));
+      totalBytes += chatsSnap.size * 1024; // 1KB per chat doc
+      
+      const usersSnap = await getDocs(collection(db, 'users'));
+      totalBytes += usersSnap.size * 2048; // 2KB per user doc
+      
+      for (const chat of chatsSnap.docs) {
+        const msgsSnap = await getDocs(collection(db, `messages/${chat.id}/msgs`));
+        totalBytes += msgsSnap.size * 512; // 512 bytes per message
+      }
+      
+      const usedMB = totalBytes / (1024 * 1024);
+      const totalMB = 1024; // 1GB
+      
+      setStorageMetrics({
+        used: parseFloat(usedMB.toFixed(2)),
+        free: parseFloat((totalMB - usedMB).toFixed(2)),
+        total: totalMB
+      });
+    } catch (error: any) {
+      console.error('Error fetching storage metrics:', error);
+      if (error.message?.includes('Missing or insufficient permissions')) {
+        setStorageError('Missing permissions. Please update your Firestore Rules to allow admins to read all chats and messages.');
+      } else {
+        setStorageError('Failed to fetch storage metrics.');
+      }
+    }
+  };
+
+  const handleDeleteAllChats = async () => {
+    if (deleteConfirmText !== 'sudo delete chat-all') {
+      toast.error('Please type the exact confirmation phrase');
+      return;
+    }
+    
+    setDeletingChats(true);
+    try {
+      const chatsSnap = await getDocs(collection(db, 'chats'));
+      
+      for (const chatDoc of chatsSnap.docs) {
+        const msgsSnap = await getDocs(collection(db, `messages/${chatDoc.id}/msgs`));
+        const batch = writeBatch(db);
+        
+        msgsSnap.docs.forEach(msg => {
+          batch.delete(msg.ref);
+        });
+        
+        await batch.commit();
+        await deleteDoc(chatDoc.ref);
+      }
+      
+      toast.success('All chats deleted successfully');
+      setDeleteConfirmText('');
+      fetchStorageMetrics();
+    } catch (error: any) {
+      console.error('Error deleting chats:', error);
+      if (error.message?.includes('Missing or insufficient permissions')) {
+        toast.error('Missing permissions. Update Firestore Rules to allow admins to delete chats.');
+      } else {
+        toast.error('Failed to delete chats');
+      }
+    } finally {
+      setDeletingChats(false);
+    }
+  };
 
   useEffect(() => {
     if (userData) {
@@ -160,6 +246,42 @@ export default function Profile() {
     }
   };
 
+  const handleChangePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      toast.error('New passwords do not match');
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+    if (!currentUser?.email) {
+      toast.error('No email associated with this account');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const credential = EmailAuthProvider.credential(currentUser.email, currentPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+      await updatePassword(currentUser, newPassword);
+      toast.success('Password updated successfully');
+      setShowPasswordChange(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error: any) {
+      console.error('Error changing password:', error);
+      if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        toast.error('Incorrect current password');
+      } else {
+        toast.error(error.message || 'Failed to update password');
+      }
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   const submitVerification = async () => {
     if (!currentUser || !verificationLink.trim()) {
       toast.error('Please provide a Google Drive link');
@@ -228,14 +350,14 @@ export default function Profile() {
             </div>
             
             <div className="flex items-center mt-4">
-              <h2 className="text-[22px] font-bold text-[#262626] mr-1">{userData?.fullName}</h2>
+              <h2 className="text-[22px] font-bold text-[#262626] mr-1"><AppleEmojiText text={userData?.fullName || ''} /></h2>
               {userData?.isVerified && <BadgeCheck size={20} className="text-[#0095F6]" fill="#0095F6" color="white" />}
             </div>
             <p className="text-[15px] text-[#8E8E8E]">@{userData?.username}</p>
             
             {userData?.bio && (
               <p className="text-[15px] text-[#262626] text-center mt-3 px-8 whitespace-pre-wrap leading-relaxed">
-                {userData.bio}
+                <AppleEmojiText text={userData.bio} />
               </p>
             )}
             
@@ -298,6 +420,16 @@ export default function Profile() {
               <button 
                 onClick={() => {
                   setShowMenu(false);
+                  setShowPasswordChange(true);
+                }}
+                className="flex items-center px-4 py-3 active:bg-gray-50"
+              >
+                <Key size={24} className="text-[#262626] mr-3" strokeWidth={1.5} />
+                <span className="text-[15px] text-[#262626]">Change Password</span>
+              </button>
+              <button 
+                onClick={() => {
+                  setShowMenu(false);
                   setShowVerification(true);
                 }}
                 className="flex items-center px-4 py-3 active:bg-gray-50"
@@ -306,13 +438,26 @@ export default function Profile() {
                 <span className="text-[15px] text-[#262626]">Request Verification</span>
               </button>
               {userData?.role === 'admin' && (
-                <button 
-                  onClick={() => navigate('/app/admin/verification')}
-                  className="flex items-center px-4 py-3 active:bg-gray-50"
-                >
-                  <ShieldCheck size={24} className="text-[#0095F6] mr-3" strokeWidth={1.5} />
-                  <span className="text-[15px] text-[#0095F6] font-semibold">Review Verifications</span>
-                </button>
+                <>
+                  <button 
+                    onClick={() => navigate('/app/admin/verification')}
+                    className="flex items-center px-4 py-3 active:bg-gray-50"
+                  >
+                    <ShieldCheck size={24} className="text-[#0095F6] mr-3" strokeWidth={1.5} />
+                    <span className="text-[15px] text-[#0095F6] font-semibold">Review Verifications</span>
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setShowMenu(false);
+                      setShowAdminSettings(true);
+                      fetchStorageMetrics();
+                    }}
+                    className="flex items-center px-4 py-3 active:bg-gray-50"
+                  >
+                    <Settings size={24} className="text-[#0095F6] mr-3" strokeWidth={1.5} />
+                    <span className="text-[15px] text-[#0095F6] font-semibold">Admin Settings</span>
+                  </button>
+                </>
               )}
               <div className="h-[0.5px] bg-[#DBDBDB] my-1"></div>
               <button onClick={handleExportData} className="flex items-center px-4 py-3 active:bg-gray-50">
@@ -328,6 +473,144 @@ export default function Profile() {
                 <Trash2 size={24} className="text-[#ED4956] mr-3" strokeWidth={1.5} />
                 <span className="text-[15px] text-[#ED4956]">Delete Account</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Settings Bottom Sheet */}
+      {showAdminSettings && (
+        <div className="absolute inset-0 z-50 flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowAdminSettings(false)}></div>
+          <div className="bg-white w-full rounded-t-2xl relative z-10 flex flex-col animate-in slide-in-from-bottom-full duration-200 pb-safe max-h-[90%]">
+            <div className="flex items-center justify-between px-4 h-12 border-b border-[#DBDBDB] shrink-0">
+              <button onClick={() => setShowAdminSettings(false)}><X size={24} className="text-[#262626]" /></button>
+              <h2 className="text-[16px] font-semibold text-[#262626]">Admin Settings</h2>
+              <div className="w-6"></div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+              {storageError && (
+                <div className="bg-[#FFF0F1] border border-[#ED4956]/20 rounded-xl p-4 mb-4">
+                  <p className="text-[14px] text-[#ED4956] font-medium">{storageError}</p>
+                </div>
+              )}
+              {/* Storage Metrics */}
+              <div>
+                <h3 className="text-[16px] font-semibold text-[#262626] mb-4 flex items-center">
+                  <Database size={20} className="mr-2" />
+                  Storage Usage
+                </h3>
+                
+                <div className="bg-[#F5F5F5] rounded-xl p-4">
+                  <div className="flex justify-between text-[14px] mb-2">
+                    <span className="text-[#262626] font-medium">Used: {storageMetrics.used} MB</span>
+                    <span className="text-[#8E8E8E]">Free: {storageMetrics.free} MB</span>
+                  </div>
+                  
+                  <div className="w-full h-3 bg-[#DBDBDB] rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-[#0095F6] rounded-full"
+                      style={{ width: `${Math.max((storageMetrics.used / storageMetrics.total) * 100, 1)}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-[12px] text-[#8E8E8E] mt-2 text-center">
+                    Total Capacity: {storageMetrics.total} MB
+                  </p>
+                </div>
+              </div>
+
+              <div className="h-[1px] bg-[#DBDBDB]"></div>
+
+              {/* Danger Zone */}
+              <div>
+                <h3 className="text-[16px] font-semibold text-[#ED4956] mb-4 flex items-center">
+                  <Trash2 size={20} className="mr-2" />
+                  Danger Zone
+                </h3>
+                
+                <div className="bg-[#FFF0F1] border border-[#ED4956]/20 rounded-xl p-4">
+                  <p className="text-[14px] text-[#ED4956] font-medium mb-2">Clear All Chats</p>
+                  <p className="text-[13px] text-[#ED4956]/80 mb-4">
+                    This will permanently delete all chats and messages for all users across the entire application. This action cannot be undone.
+                  </p>
+                  
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      placeholder='Type "sudo delete chat-all"'
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      className="w-full bg-white border border-[#ED4956]/30 rounded-lg px-3 py-2 text-[14px] outline-none focus:border-[#ED4956]"
+                    />
+                    
+                    <button
+                      onClick={handleDeleteAllChats}
+                      disabled={deletingChats || deleteConfirmText !== 'sudo delete chat-all'}
+                      className="w-full bg-[#ED4956] text-white rounded-lg py-2.5 text-[14px] font-semibold disabled:opacity-50 flex items-center justify-center"
+                    >
+                      {deletingChats ? (
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      ) : (
+                        'Delete All Chats'
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password Change Bottom Sheet */}
+      {showPasswordChange && (
+        <div className="absolute inset-0 z-50 flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowPasswordChange(false)}></div>
+          <div className="bg-white w-full rounded-t-2xl relative z-10 flex flex-col animate-in slide-in-from-bottom-full duration-200 pb-safe">
+            <div className="flex items-center justify-between px-4 h-12 border-b border-[#DBDBDB] shrink-0">
+              <button onClick={() => setShowPasswordChange(false)}><X size={24} className="text-[#262626]" /></button>
+              <h2 className="text-[16px] font-semibold text-[#262626]">Change Password</h2>
+              <button onClick={handleChangePassword} disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword}>
+                {changingPassword ? (
+                  <div className="w-5 h-5 border-2 border-[#DBDBDB] border-t-[#0095F6] rounded-full animate-spin"></div>
+                ) : (
+                  <Check size={24} className={(!currentPassword || !newPassword || !confirmPassword) ? "text-[#DBDBDB]" : "text-[#0095F6]"} />
+                )}
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div>
+                <label className="text-[12px] text-[#8E8E8E]">Current Password</label>
+                <input 
+                  type="password" 
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="w-full border-b border-[#DBDBDB] py-2 text-[16px] text-[#262626] focus:outline-none focus:border-[#262626]"
+                  placeholder="Enter current password"
+                />
+              </div>
+              <div>
+                <label className="text-[12px] text-[#8E8E8E]">New Password</label>
+                <input 
+                  type="password" 
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full border-b border-[#DBDBDB] py-2 text-[16px] text-[#262626] focus:outline-none focus:border-[#262626]"
+                  placeholder="Enter new password"
+                />
+              </div>
+              <div>
+                <label className="text-[12px] text-[#8E8E8E]">Confirm New Password</label>
+                <input 
+                  type="password" 
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full border-b border-[#DBDBDB] py-2 text-[16px] text-[#262626] focus:outline-none focus:border-[#262626]"
+                  placeholder="Confirm new password"
+                />
+              </div>
             </div>
           </div>
         </div>
