@@ -69,8 +69,15 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
 
+      - name: Find APK Location
+        run: |
+          echo "=== APK খোঁজা হচ্ছে ==="
+          find android -name "*.apk" 2>/dev/null || echo "কোনো APK পাওয়া যায়নি"
+          echo "=== Build output folder ==="
+          ls -la android/app/build/outputs/ 2>/dev/null || echo "outputs folder নেই"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Mobile-App-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apkapk
+          path: android/app/build/outputs/apk/debug/*.apk
