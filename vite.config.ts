@@ -10,6 +10,11 @@ export default defineConfig(({mode}) => {
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
+    build: {
+      rollupOptions: {
+        external: ['emoji-mart'],
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
